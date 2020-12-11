@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "src/refresh-lambda"
+		},
+		{
+			"path": "src/domain"
+		}
+	],
+	"settings": {}
+}
