@@ -4,6 +4,7 @@ import "time"
 
 // EcsService
 type EcsService struct {
+	ClusterArn   string
 	Name         string
 	CreatedAt    *time.Time
 	LaunchType   string
