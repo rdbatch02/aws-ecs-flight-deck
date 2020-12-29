@@ -82,9 +82,11 @@ func getClusterServices(ecsService *ecs.ECS, clusterArn string) ([]domain.EcsSer
 func ecsToFdService(service *ecs.Service) domain.EcsService {
 	serv := new(domain.EcsService)
 	serv.ClusterArn = *service.ClusterArn
+	serv.ServiceArn = *service.ServiceArn
 	serv.CreatedAt = service.CreatedAt
 	serv.LaunchType = *service.LaunchType
 	serv.Status = *service.Status
+	serv.Name = *service.ServiceName
 	serv.DesiredCount = *service.DesiredCount
 	serv.RunningCount = *service.RunningCount
 	serv.PendingCount = *service.PendingCount
@@ -98,7 +100,7 @@ func saveServices(services []domain.EcsService, dynamoService *dynamodb.DynamoDB
 			fmt.Printf("Saving service: %s", service.Name)
 			ddbInput := &dynamodb.PutItemInput{
 				Item:      ddbService,
-				TableName: aws.String(tableName), // TODO: Put proper table name here
+				TableName: aws.String(tableName),
 			}
 			_, err := dynamoService.PutItem(ddbInput)
 			if err != nil {
