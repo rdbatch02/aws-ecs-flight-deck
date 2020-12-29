@@ -5,10 +5,14 @@ import { AssetCode, Code, Function, Runtime, Tracing } from '@aws-cdk/aws-lambda
 import { Effect, PolicyStatement } from '@aws-cdk/aws-iam';
 import { LambdaProxyIntegration } from '@aws-cdk/aws-apigatewayv2-integrations'
 import { HttpApi, HttpMethod } from '@aws-cdk/aws-apigatewayv2';
+import { Queue } from '@aws-cdk/aws-sqs';
+import { SqsEventSource } from '@aws-cdk/aws-lambda-event-sources';
 
 export class EcsFlightDeckStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: FlightDeckConfig) {
     super(scope, id, props);
+
+    const DELAY_SECONDS = 60
 
     const dbTable = new Table(this, 'table', {
       tableName: 'EcsFlightDeck-Services',
@@ -24,6 +28,10 @@ export class EcsFlightDeckStack extends cdk.Stack {
         type: AttributeType.STRING
       }
     })
+
+    const refreshQueue = new Queue(this, 'refresh-queue', {
+      queueName: 'EcsFlightDeck-refreshQueue'
+    })    
 
     const refreshLambda = new Function(this, 'refresh-function', {
       functionName: 'EcsFlightDeck-Refresh',
@@ -44,9 +52,32 @@ export class EcsFlightDeckStack extends cdk.Stack {
       handler: "ReadApi",
       tracing: Tracing.ACTIVE,
       environment: {
-        "FLIGHT_DECK_TABLE_NAME": dbTable.tableName
+        "FLIGHT_DECK_TABLE_NAME": dbTable.tableName,
+        "REFRESH_QUEUE_URL": refreshQueue.queueUrl,
+        "DELAY_SECONDS": DELAY_SECONDS.toString()
       }
     })
+
+    const refreshClockLambda = new Function(this, 'refresh-clock-function', {
+      functionName: "EcsFlightDeck-RefreshClock",
+      runtime: Runtime.GO_1_X,
+      memorySize: 256,
+      code: AssetCode.fromAsset("src/refresh-clock/build/refreshclock.zip"),
+      handler: "RefreshClock",
+      environment: {
+        "REFRESH_LAMBDA_NAME": refreshLambda.functionName,
+        "REFRESH_QUEUE_URL": refreshQueue.queueUrl,
+        "DELAY_SECONDS": (DELAY_SECONDS * 10).toString()
+      }
+    })
+
+    refreshQueue.grantConsumeMessages(refreshClockLambda)
+    refreshQueue.grantSendMessages(refreshClockLambda)
+    refreshQueue.grantPurge(refreshClockLambda)
+
+    refreshClockLambda.addEventSource(new SqsEventSource(refreshQueue))
+
+    refreshQueue.grantSendMessages(readApiLambda)
 
     const readApiIntegration = new LambdaProxyIntegration({
       handler: readApiLambda

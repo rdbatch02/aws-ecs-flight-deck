@@ -11,6 +11,9 @@
 		},
 		{
 			"path": "src/cluster-read-api"
+		},
+		{
+			"path": "src/refresh-clock"
 		}
 	],
 	"settings": {}

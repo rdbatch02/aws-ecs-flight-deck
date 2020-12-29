@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -14,28 +15,43 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/ecs"
-	"github.com/aws/aws-xray-sdk-go/xray"
+	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/rdbatch02/ecs-flight-deck/domain"
 )
 
 var errorLogger = log.New(os.Stderr, "ERROR ", log.Llongfile)
 var dynamoService *dynamodb.DynamoDB
 var ecsService *ecs.ECS
+var sqsService *sqs.SQS
+
 var tableName string
+var refreshQueueURL string
+var delaySeconds int64
 
 func init() {
 	tableName = os.Getenv("FLIGHT_DECK_TABLE_NAME")
 	if len(tableName) == 0 {
-		fmt.Printf("FLIGHT_DECK_TABLE_NAME must not be empty")
+		fmt.Printf("FLIGHT_DECK_TABLE_NAME must not be empty\n")
 		panic("FLIGHT_DECK_TABLE_NAME must not be empty")
+	}
+
+	refreshQueueURL = os.Getenv("REFRESH_QUEUE_URL")
+	if len(tableName) == 0 {
+		fmt.Printf("REFRESH_QUEUE_URL must not be empty\n")
+		panic("REFRESH_QUEUE_URL must not be empty")
+	}
+
+	var err error
+	delaySeconds, err = strconv.ParseInt(os.Getenv("DELAY_SECONDS"), 10, 64)
+	if err != nil {
+		panic("DELAY_SECONDS could not be parsed")
 	}
 
 	awsSession := session.Must(session.NewSession())
 
 	dynamoService = dynamodb.New(awsSession)
 	ecsService = ecs.New(awsSession)
-	xray.AWS(dynamoService.Client)
-	xray.AWS(ecsService.Client)
+	sqsService = sqs.New(awsSession)
 }
 
 func main() {
@@ -43,11 +59,11 @@ func main() {
 }
 
 func route(req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-
 	httpRequest := req.RequestContext.HTTP
 
 	fmt.Printf("Routing %s", httpRequest.Path)
 
+	enqueueRefresh()
 	switch httpRequest.Path {
 	case "/clusters":
 		return clustersHandler(req)
@@ -66,7 +82,7 @@ func clustersHandler(req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTT
 func getAllClusters() (events.APIGatewayV2HTTPResponse, error) {
 	clusters, err := ecsService.ListClusters(&ecs.ListClustersInput{})
 	if err != nil {
-		fmt.Printf("Failed to enumerate clusters %s", err)
+		fmt.Printf("Failed to enumerate clusters %s \n", err)
 		return serverError(err)
 	}
 	clusterArns, err := json.Marshal(clusters.ClusterArns)
@@ -80,7 +96,7 @@ func getAllClusters() (events.APIGatewayV2HTTPResponse, error) {
 }
 
 func getClusterServices(clusterArn string) (events.APIGatewayV2HTTPResponse, error) {
-	fmt.Printf("Searching for services from cluster: %s", clusterArn)
+	fmt.Printf("Searching for services from cluster: %s \n", clusterArn)
 	query := dynamodb.QueryInput{
 		TableName:              &tableName,
 		ConsistentRead:         aws.Bool(true),
@@ -95,7 +111,7 @@ func getClusterServices(clusterArn string) (events.APIGatewayV2HTTPResponse, err
 			service := domain.EcsService{}
 			err := dynamodbattribute.UnmarshalMap(item, &service)
 			if err != nil {
-				fmt.Printf("Failed to unmarshal Dynamo record %v", err)
+				fmt.Printf("Failed to unmarshal Dynamo record %v \n", err)
 			}
 			services = append(services, service)
 		}
@@ -111,6 +127,21 @@ func getClusterServices(clusterArn string) (events.APIGatewayV2HTTPResponse, err
 		StatusCode: http.StatusOK,
 		Body:       string(servicesJSON),
 	}, nil
+}
+
+func enqueueRefresh() {
+	// Re-arm next refresh
+	_, err := sqsService.SendMessage(&sqs.SendMessageInput{
+		QueueUrl:     &refreshQueueURL,
+		DelaySeconds: &delaySeconds,
+		MessageBody:  aws.String("ReadApi"),
+	})
+
+	if err != nil {
+		fmt.Printf("Got error trying to trigger refresh %v", err)
+	} else {
+		fmt.Printf("Refresh enqueued to trigger in %d seconds \n", delaySeconds)
+	}
 }
 
 func serverError(err error) (events.APIGatewayV2HTTPResponse, error) {
