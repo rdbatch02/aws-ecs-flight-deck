@@ -85,13 +85,23 @@ func getAllClusters() (events.APIGatewayV2HTTPResponse, error) {
 		fmt.Printf("Failed to enumerate clusters %s \n", err)
 		return serverError(err)
 	}
-	clusterArns, err := json.Marshal(clusters.ClusterArns)
+	// clusterArns, err := json.Marshal(clusters.ClusterArns)
+	clusterDetails, err := ecsService.DescribeClusters(&ecs.DescribeClustersInput{
+		Clusters: clusters.ClusterArns,
+		Include:  []*string{},
+	})
 	if err != nil {
 		return serverError(err)
 	}
+
+	clusterDetailsJSON, err := json.Marshal(clusterDetails.Clusters)
+	if err != nil {
+		return serverError(err)
+	}
+
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusOK,
-		Body:       string(clusterArns),
+		Body:       string(clusterDetailsJSON),
 	}, nil
 }
 

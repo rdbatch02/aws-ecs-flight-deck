@@ -27,3 +27,4 @@ cdk.out
 # vendor/
 *.zip
 build/
+.cache
