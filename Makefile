@@ -1,5 +1,5 @@
 .ONESHELL:
-build: build-refresh build-read-api build-refresh-clock
+build: build-refresh build-read-api build-refresh-clock build-ui
 
 build-refresh:
 	cd src/refresh-lambda && \
@@ -18,6 +18,10 @@ build-refresh-clock:
 	rm -rf build && \
 	GOOS=linux go build -o build/RefreshClock RefreshClock.go && \
 	cd build && zip refreshclock.zip RefreshClock
+
+build-ui:
+	cd src/ui && \
+	npm run build
 
 deploy:
 	cdk deploy

@@ -65,7 +65,7 @@ func route(req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse,
 
 	enqueueRefresh()
 	switch httpRequest.Path {
-	case "/clusters":
+	case "/api/clusters":
 		return clustersHandler(req)
 	default:
 		return clientError(http.StatusNotFound)

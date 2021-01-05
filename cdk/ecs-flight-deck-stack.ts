@@ -2,11 +2,14 @@ import * as cdk from '@aws-cdk/core';
 import { AttributeType, BillingMode, Table } from '@aws-cdk/aws-dynamodb'
 import { FlightDeckConfig } from './flight-deck-config';
 import { AssetCode, Code, Function, Runtime, Tracing } from '@aws-cdk/aws-lambda';
-import { Effect, PolicyStatement } from '@aws-cdk/aws-iam';
-import { LambdaProxyIntegration } from '@aws-cdk/aws-apigatewayv2-integrations'
+import { Effect, PolicyStatement, Role, ServicePrincipal } from '@aws-cdk/aws-iam';
+import { HttpProxyIntegration, LambdaProxyIntegration } from '@aws-cdk/aws-apigatewayv2-integrations'
 import { HttpApi, HttpMethod } from '@aws-cdk/aws-apigatewayv2';
 import { Queue } from '@aws-cdk/aws-sqs';
 import { SqsEventSource } from '@aws-cdk/aws-lambda-event-sources';
+import { Bucket, BucketEncryption } from '@aws-cdk/aws-s3';
+import { BucketDeployment, Source } from '@aws-cdk/aws-s3-deployment';
+import { isMainThread } from 'worker_threads';
 
 export class EcsFlightDeckStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: FlightDeckConfig) {
@@ -85,7 +88,7 @@ export class EcsFlightDeckStack extends cdk.Stack {
 
     const httpApi = new HttpApi(this, 'EcsFlightDeck-HttpApi')
     httpApi.addRoutes({
-      path: '/clusters',
+      path: '/api/clusters',
       methods: [HttpMethod.GET],
       integration: readApiIntegration
     })
@@ -101,5 +104,27 @@ export class EcsFlightDeckStack extends cdk.Stack {
 
     dbTable.grantReadWriteData(refreshLambda)
     dbTable.grantReadData(readApiLambda)
+
+    // UI
+
+    const bucket = new Bucket(this, 'EcsFlightDeck-s3Bucket', {
+      bucketName: 'aws-ecs-flight-deck',
+      websiteIndexDocument: 'index.html'
+    })
+
+    new BucketDeployment(this, 'DeployUi', {
+      sources: [Source.asset('src/ui/build/release')],
+      destinationBucket: bucket
+    })
+    
+    // const bucketHttpIntegration = new HttpProxyIntegration({
+    //   url: bucket.bucketWebsiteUrl
+    // })
+
+    // // httpApi.addRoutes({
+    // //   path: '/ui/{proxy+}',
+    // //   methods: [HttpMethod.ANY],
+    // //   integration: bucketHttpIntegration
+    // // })
   }
 }
