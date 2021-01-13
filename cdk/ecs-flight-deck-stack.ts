@@ -10,6 +10,7 @@ import { SqsEventSource } from '@aws-cdk/aws-lambda-event-sources';
 import { Bucket, BucketEncryption } from '@aws-cdk/aws-s3';
 import { BucketDeployment, Source } from '@aws-cdk/aws-s3-deployment';
 import { isMainThread } from 'worker_threads';
+import { write } from 'fs';
 
 export class EcsFlightDeckStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: FlightDeckConfig) {
@@ -61,6 +62,7 @@ export class EcsFlightDeckStack extends cdk.Stack {
       }
     })
 
+    
     const refreshClockLambda = new Function(this, 'refresh-clock-function', {
       functionName: "EcsFlightDeck-RefreshClock",
       runtime: Runtime.GO_1_X,
@@ -73,7 +75,19 @@ export class EcsFlightDeckStack extends cdk.Stack {
         "DELAY_SECONDS": (DELAY_SECONDS * 10).toString()
       }
     })
-
+    
+    const writeApiLambda = new Function(this, 'write-api-function', {
+      functionName: 'EcsFlightDeck-WriteApi',
+      runtime: Runtime.GO_1_X,
+      memorySize: 512,
+      code: AssetCode.fromAsset("src/cluster-write-api/build/writeapi.zip"),
+      handler: "WriteApi",
+      tracing: Tracing.ACTIVE,
+      environment: {
+        "REFRESH_CLOCK_LAMBDA_NAME": refreshClockLambda.functionName
+      }
+    })
+    
     refreshQueue.grantConsumeMessages(refreshClockLambda)
     refreshQueue.grantSendMessages(refreshClockLambda)
     refreshQueue.grantPurge(refreshClockLambda)
@@ -86,11 +100,21 @@ export class EcsFlightDeckStack extends cdk.Stack {
       handler: readApiLambda
     })
 
+    const writeApiIntegration = new LambdaProxyIntegration({
+      handler: writeApiLambda
+    })
+
     const httpApi = new HttpApi(this, 'EcsFlightDeck-HttpApi')
     httpApi.addRoutes({
       path: '/api/clusters',
       methods: [HttpMethod.GET],
       integration: readApiIntegration
+    })
+
+    httpApi.addRoutes({
+      path: '/api/clusters',
+      methods: [HttpMethod.PUT, HttpMethod.POST],
+      integration: writeApiIntegration
     })
 
     const readEcsPolicy = new PolicyStatement({
@@ -99,8 +123,15 @@ export class EcsFlightDeckStack extends cdk.Stack {
       resources: ["*"]
     })
 
+    const writeEcsPolicy = new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ["ecs:Update*"],
+      resources: ["*"]
+    })
+
     refreshLambda.addToRolePolicy(readEcsPolicy)
     readApiLambda.addToRolePolicy(readEcsPolicy)
+    writeApiLambda.addToRolePolicy(writeEcsPolicy)
 
     dbTable.grantReadWriteData(refreshLambda)
     dbTable.grantReadData(readApiLambda)
@@ -117,14 +148,14 @@ export class EcsFlightDeckStack extends cdk.Stack {
       destinationBucket: bucket
     })
     
-    // const bucketHttpIntegration = new HttpProxyIntegration({
-    //   url: bucket.bucketWebsiteUrl
-    // })
+    const bucketHttpIntegration = new HttpProxyIntegration({
+      url: bucket.bucketWebsiteUrl
+    })
 
-    // // httpApi.addRoutes({
-    // //   path: '/ui/{proxy+}',
-    // //   methods: [HttpMethod.ANY],
-    // //   integration: bucketHttpIntegration
-    // // })
+    httpApi.addRoutes({
+      path: '/ui/{proxy+}',
+      methods: [HttpMethod.ANY],
+      integration: bucketHttpIntegration
+    })
   }
 }

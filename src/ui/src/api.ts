@@ -12,7 +12,7 @@ export class Api {
         )
     )
 
-    static baseUrl = Api.isLocalhost ? "https://dd0l0av14k.execute-api.us-east-2.amazonaws.com/" : "/"
+    static baseUrl = Api.isLocalhost ? "https://dd0l0av14k.execute-api.us-east-2.amazonaws.com/api/" : "/"
 
     static async getClusters(): Promise<Cluster[]> {
         return fetch(this.baseUrl + "clusters").then(response => response.json())

@@ -1,5 +1,5 @@
 .ONESHELL:
-build: build-refresh build-read-api build-refresh-clock build-ui
+build: build-refresh build-read-api build-write-api build-refresh-clock build-ui
 
 build-refresh:
 	cd src/refresh-lambda && \
@@ -12,6 +12,12 @@ build-read-api:
 	rm -rf build && \
 	GOOS=linux go build -o build/ReadApi ReadApi.go && \
 	cd build && zip readapi.zip ReadApi
+
+build-write-api:
+	cd src/cluster-write-api && \
+	rm -rf build && \
+	GOOS=linux go build -o build/WriteApi WriteApi.go && \
+	cd build && zip writeapi.zip WriteApi
 
 build-refresh-clock:
 	cd src/refresh-clock && \
