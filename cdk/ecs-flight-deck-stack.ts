@@ -112,8 +112,8 @@ export class EcsFlightDeckStack extends cdk.Stack {
     })
 
     httpApi.addRoutes({
-      path: '/api/clusters',
-      methods: [HttpMethod.PUT, HttpMethod.POST],
+      path: '/api/service/{proxy+}',
+      methods: [HttpMethod.ANY],
       integration: writeApiIntegration
     })
 
